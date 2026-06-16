@@ -61,6 +61,7 @@ enum ExamStatus {
 
 model User {
   id            String         @id @default(cuid())
+  username      String         @unique
   name          String?
   email         String         @unique
   password      String // เข้ารหัสด้วย bcrypt / argon2
