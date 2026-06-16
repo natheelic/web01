@@ -1,0 +1,140 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  STUDENT
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  ESSAY
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum ExamStatus {
+  STARTED
+  SUBMITTED
+  GRADED
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String?
+  email         String         @unique
+  password      String // เข้ารหัสด้วย bcrypt / argon2
+  role          Role           @default(STUDENT)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  examsCreated  Exam[]         @relation("ExamCreator")
+  studentExams  StudentExam[]
+}
+
+model Subject {
+  id          String     @id @default(cuid())
+  code        String     @unique // รหัสวิชา เช่น CS101
+  name        String
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  questions   Question[]
+  exams       Exam[]
+}
+
+model Question {
+  id            String         @id @default(cuid())
+  text          String         @db.Text
+  type          QuestionType
+  difficulty    Difficulty     @default(MEDIUM)
+  points        Float          @default(1.0)
+  imageUrl      String?        @db.Text
+  subjectId     String
+  subject       Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  choices       Choice[]
+  examQuestions ExamQuestion[]
+  studentAnswers StudentAnswer[]
+}
+
+model Choice {
+  id             String          @id @default(cuid())
+  text           String          @db.Text
+  isCorrect      Boolean         @default(false)
+  questionId     String
+  question       Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  studentAnswers StudentAnswer[]
+}
+
+model Exam {
+  id            String         @id @default(cuid())
+  title         String
+  description   String?        @db.Text
+  duration      Int            // ระยะเวลาทำข้อสอบ (นาที)
+  startTime     DateTime       // วันเวลาเริ่มเปิดให้สอบ
+  endTime       DateTime       // วันเวลาปิดไม่ให้สอบ
+  passingScore  Float          @default(50.0) // เกณฑ์ผ่านคิดเป็นเปอร์เซ็นต์ หรือคะแนนดิบ
+  shuffleQuestions Boolean     @default(true)
+  shuffleChoices   Boolean     @default(true)
+  subjectId     String
+  subject       Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdById   String
+  createdBy     User           @relation("ExamCreator", fields: [createdById], references: [id])
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  examQuestions ExamQuestion[]
+  studentExams  StudentExam[]
+}
+
+model ExamQuestion {
+  examId     String
+  questionId String
+  order      Int      @default(0) // สำหรับเรียงข้อในชุดข้อสอบ (ถ้าไม่สลับ)
+  
+  exam       Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([examId, questionId])
+}
+
+model StudentExam {
+  id          String          @id @default(cuid())
+  studentId   String
+  examId      String
+  startedAt   DateTime        @default(now())
+  submittedAt DateTime?
+  score       Float           @default(0.0)
+  status      ExamStatus      @default(STARTED)
+  
+  student     User            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  exam        Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
+  answers     StudentAnswer[]
+
+  @@unique([studentId, examId]) // นักเรียนหนึ่งคนเข้าสอบชุดเดิมได้ครั้งเดียวต่อหนึ่งสิทธิ์ (หรือล้างสถานะเพื่อสอบใหม่)
+}
+
+model StudentAnswer {
+  id            String      @id @default(cuid())
+  studentExamId String
+  questionId    String
+  choiceId      String?     // สำหรับ Multiple Choice / True-False
+  essayAnswer   String?     @db.Text // สำหรับข้อสอบบรรยาย อัตนัย
+  
+  studentExam   StudentExam @relation(fields: [studentExamId], references: [id], onDelete: Cascade)
+  question      Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  choice        Choice?     @relation(fields: [choiceId], references: [id], onDelete: SetNull)
+
+  @@unique([studentExamId, questionId]) // ป้องกันคำตอบซ้ำในข้อเดิมของรอบการสอบนั้น
+}
